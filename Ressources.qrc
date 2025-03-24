@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/application-exit.png</file>
+        <file>images/clear.png</file>
+        <file>images/connect.png</file>
+        <file>images/dir.png</file>
+        <file>images/dir_refresh.png</file>
+        <file>images/disconnect.png</file>
+        <file>images/droite.png</file>
+        <file>images/file.png</file>
+        <file>images/file_refresh.png</file>
+        <file>images/gauche.png</file>
+        <file>images/micropro.png</file>
+        <file>images/refresh.png</file>
+        <file>images/sd.png</file>
+        <file>images/sd_icon.png</file>
+        <file>images/logo.ico</file>
+        <file>images/selectionneurVoies.png</file>
+    </qresource>
+</RCC>
