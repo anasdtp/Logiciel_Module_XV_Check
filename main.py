@@ -1,41 +1,8 @@
-import sys
-from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QIcon
+from manwindow import *
 
-import serial
-import serial.tools.list_ports
-from lib.serial_thread import SerialThread, SelectCOM
-
-from lib.ui_mainwindow import Ui_MainWindow
-
-from lib.donnees import *
-
-#Pour actualiser : 
-#   pyside6-rcc -o Ressources_rc.py Ressources.qrc
-#   pyside6-uic mainwindow.ui -o ui_mainwindow.py
-#   pyside6-uic dialog.ui -o ui_dialog.py
-#   pyside6-uic tableauBilan.ui -o ui_tableauVoies.py
-#   pyside6-uic ficheValidation.ui -o ui_ficheValidation.py
-#   pyside6-uic ajoutControleur.ui -o ui_ajoutControleur.py 
-#   pyside6-uic selectionneur_voies.ui -o ui_selectionneur_voies.py
-
-
-class MainWindow(QMainWindow):
+class Application(MainWindow):
     def __init__(self):
         super().__init__()
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
-        self.setWindowTitle("Banc de test carte ARAL")
-        self.setWindowIcon(QIcon('logo.ico'))
-
-        self.serial_window = SelectCOM(self)
-        
-        self.ui.action_Quit.triggered.connect(self.QuitWindows)
-        self.ui.action_Clear_Log.triggered.connect(self.textPanel_Clear)
-        self.ui.action_Connect.triggered.connect(self.openDialogWindow)
-        self.ui.action_Disconnect.triggered.connect(self.closeSerial)
-        self.ui.action_Refresh.triggered.connect(self.refreshSystem)
         
         if com.serial_thread is None:
             com.serial_thread = SerialThread()  
@@ -43,37 +10,17 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.RxManage)
         self.timer.start(1)  # Déclenchement toutes les 1 ms
+        
         self.FIFO_lecture = 0
         self.FIFO_occupation = 0
         self.FIFO_max_occupation = 0
         
-        
-        
-        self.ui.sendButton_trame_brute.clicked.connect(self.onSendButtonTrameBrute)
-        
-        
-        print("End Initialization MainWindow")
-
+        self.adresse_module = 0x21 #Adresse du module avec lequel on veut communiquer
+        self.mode_de_fontionnement = "LIGNE" #Mode de fonctionnement du banc de test : LIGNE ou TEST. 
+        #En mode LIGNE, le banc de test ne fait que recevoir les trames des modules et les affiches
+        #En mode TEST, le banc de test renvoi un acquittement à chaque trame reçu et si l'adresse du module correspond à celle du banc de test, 
+        #on traite la trame et on renvoi une trame de retour par rapport au protocole de communication des modules 8 voies
     
-    def start_serial(self):
-        selected_port = self.serial_window.ui.comboBox.currentText()
-        print(selected_port)
-        if selected_port:
-            try:
-                com.serial_thread = SerialThread(selected_port, SERIAL_BAUDRATE)
-                com.serial_thread.start()
-                print("Starting serial com")
-                self.ui.textEdit.append(f"")
-                self.ui.textEdit.append(f"-----------Starting serial com")
-                self.ui.textEdit.append(f"-----------Port: {selected_port}")
-                self.serial_window.accept()
-            except serial.SerialException as e:
-                print("Serial Error", f"Failed to open port {selected_port}: {e}")
-                self.ui.textEdit.append(f"")
-                self.ui.textEdit.append(f"-----------Serial Error !!")
-                self.ui.textEdit.append(f"-----------Failed to open port {selected_port}: {e}")
-        
-
     def RxManage(self):
         # print("RxManage")
         self.FIFO_occupation = com.FIFO_Ecriture - self.FIFO_lecture
@@ -103,117 +50,57 @@ class MainWindow(QMainWindow):
                 self.ui.textEdit.append(message)
                 
             case id if (id == ID_RX_FRAME):
-                adr = com.rxMsg[self.FIFO_lecture].data[0]
-                cmd1 = com.rxMsg[self.FIFO_lecture].data[1]
-                cmd0 = com.rxMsg[self.FIFO_lecture].data[2]
+                msg = FreqMessage()
+                msg.adr = com.rxMsg[self.FIFO_lecture].data[0]
+                msg.cmd1 = com.rxMsg[self.FIFO_lecture].data[1]
+                msg.cmd0 = com.rxMsg[self.FIFO_lecture].data[2]
+                msg.build_trame()
                 
-                message = f"ID_RX_FRAME : trame reçu des modules : " + FreqMessage(adr, cmd1, cmd0).toString()
+                message = f"ID_RX_FRAME : trame reçu des modules : " + msg.toString() # A afficher dans un autre textEdit
                 self.ui.textEdit.append(f"")
                 self.ui.textEdit.append(message)
+                
+                self.manageTrame(msg)
             
             case _:
                 self.ui.textEdit.append(f"Received message from an unknown ID : " + str(id))
         self.FIFO_lecture = (self.FIFO_lecture + 1) % SIZE_FIFO
 
-    def sendMsg(self, msg = Message()):
-        # sample_message = Message(id=1, length=3, data=[0x01, 0x02, 0x03])
-        packet = msg.build_packet()
-        print(packet)
-        if com.serial_thread.running:
-            try:
-                com.ecritureEnCours = True
-                com.serial_thread.serial.write(packet) #Fonction bloquante, qui se debloque toutes les 3 secondes si l'envoi à echouer
-                com.ecritureEnCours = False
-                if(com.problemeEnEcriture):
-                    com.problemeEnEcriture = False
-                    self.ui.textEdit.append(f"")
-                    self.ui.textEdit.append(f"-----------Problème rencontré lors de l'envoi de données")
-                    self.ui.textEdit.append(f"-----------Deconnexion du PORT COM...")
-                    com.serial_thread.close()
-                    self.ui.textEdit.append(f"-----------Essayer de vous reconnectez svp")
-            except (serial.SerialException) as e:
-                error_message = f"Failed to send data: {e.__class__.__name__}: {e}"
-                print(error_message)
-                self.ui.textEdit.append(f"")
-                self.ui.textEdit.append(f"-----------{error_message}")
-                com.serial_thread.close()
-                self.ui.textEdit.append(f"-----------Essayer de vous reconnectez svp")
-        else:
-            self.ui.textEdit.append(f"")
-            self.ui.textEdit.append(f"-----------Aucun PORT COM de connecté! Veuillez-vous connectez.")
-                
-
-    def sendEmpty(self, id):
-        sample_message = Message(id, length=0, data=[0])
-        self.sendMsg(sample_message)
-
-    def sendByte(self, id, byte):
-        sample_message = Message(id, length=1, data=[byte & 0xFF])
-        self.sendMsg(sample_message)
-
-    def sendTwoBytes(self, id, bytes):
-        sample_message = Message(id, length=2, data=[(bytes&0xFF), (bytes>>8 & 0xFF)])
-        self.sendMsg(sample_message)
-    
-    def sendTrame(self, msg = FreqMessage()):
-        sample_message = Message(ID_TX_FRAME, length=3, data=[msg.adr, msg.cmd1, msg.cmd0])
-        self.sendMsg(sample_message)
-    
-    def textPanel_Clear(self):
-        self.ui.textEdit.clear()
-    
-    def closeSerial(self):
-        self.ui.textEdit.append(f"")
-        self.ui.textEdit.append(f"-----------Deconnexion du PORT COM...")
-        com.serial_thread.close()
-    
-    def openDialogWindow(self):
-        self.serial_window.show()
-        self.serial_window.raise_()
-        self.serial_window.activateWindow()
-        self.serial_window.populate_com_ports() #Permet d'aller chercher et actualiser les ports COM de disponible. Ce qui permet de ne pas evoir fermer le logiciel et le reouvrir
-    
-    def refreshSystem(self):
-        print("Rafraichissement du systeme")
-        self.ui.textEdit.append(f"")
-        self.ui.textEdit.append(f"-----------Rafraichissement du systeme")
-        #... 
-        #Fonction à completer
-    
-    def onSendButtonTrameBrute(self):
-        msg = FreqMessage()
-        msg.trame[0] = int(self.ui.comboBox_trame_1.currentText(), 16)
-        msg.trame[1] = int(self.ui.comboBox_trame_2.currentText(), 16)  
-        msg.trame[2] = int(self.ui.comboBox_trame_3.currentText(), 16)
-        msg.trame[3] = int(self.ui.comboBox_trame_4.currentText(), 16)
-        msg.trame[4] = int(self.ui.comboBox_trame_5.currentText(), 16)
-        msg.trame[5] = int(self.ui.comboBox_trame_6.currentText(), 16)
-        msg.parse_trame()
-        self.ui.textEdit.append(f"")
-        self.ui.textEdit.append(f"-----------Envoi de la trame brute : " + msg.toString())
-        self.sendTrame(msg)
-    
-    def closeEvent(self, event):
-        print("Au revoir")
-        self.serial_window.close()
+    def manageTrame(self, msg : FreqMessage):
+        #je recois une trame, msg.adr est l'adresse du module qui m'envoie la trame
+        #msg.cmd1 et msg.cmd0 sont les 2 octet de commande envoyées par le module
+        #il faut etudier le protocole de communication des modules 8 voies pour savoir comment traiter les trames recues
         
-        # self.switchARAL.close()
-        super().closeEvent(event)
-        
-    def QuitWindows(self):
-        self.close()
-        QApplication.quit()
-           
-           
+        self.ui.textEdit.append(f"")#Fonction pour afficher la console du logiciel
+        self.ui.textEdit.append(f"-----------Trame recu : " + msg.toString())
             
-
+        if(self.mode_de_fontionnement == "TEST"):
+            self.sendTrame(msg) #Si on est en mode test on renvoi l'ack
+            
+            if(msg.adr == self.adresse_module): #Si l'adresse du module est celle du banc de test, on traite la trame
+                #traitement de la trame
+                msg_en_retour = FreqMessage()
+                msg_en_retour.adr = self.adresse_module
+                msg_en_retour.cmd1 = 0x00
+                msg_en_retour.cmd0 = 0x00
+                msg_en_retour.build_trame()
+                
+                
+                self.ui.textEdit.append(f"-----------Traitement de la trame...")
+                self.ui.textEdit.append(f"-----------Envoi de la trame de retour...")
+                self.sendTrame(msg_en_retour)  
+                
+                #Pour faire une machine d'etat, tu peux utiliser "match ... case" pour traiter les trames reçues
+                #Tu dois aller chercher dans le pdf du protocole de communication des modules 8 voies pour savoir comment traiter les trames
+        
+        
 
 
 def main():
     print("Hello")
     app = QApplication([]) 
     
-    main_window = MainWindow()
+    main_window = Application()
     main_window.show()
 
     main_window.serial_window.show()

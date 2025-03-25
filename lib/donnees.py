@@ -45,7 +45,7 @@ class COMMUNICATION():
         self.problemeEnEcriture = False #Flag pour dire que le serial.write n'a pas fonctionné
 com = COMMUNICATION()
 
-class FreqMessage:
+class FreqMessage():
     def __init__(self, adr=0, cmd1=0, cmd0=0):
         self.adr = adr & 0xFF  # Ensure adr is within 8 bits
         self.cmd1 = cmd1 & 0xFF  # Ensure cmd1 is within 8 bits
