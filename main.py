@@ -65,35 +65,64 @@ class Application(MainWindow):
             case _:
                 self.ui.textEdit.append(f"Received message from an unknown ID : " + str(id))
         self.FIFO_lecture = (self.FIFO_lecture + 1) % SIZE_FIFO
+    
+    def manageTrame(self, msg: FreqMessage):
+        self.ui.textEdit.append("")
+        self.ui.textEdit.append(f"-----------Trame reçue : {msg.toString()}")
 
-    def manageTrame(self, msg : FreqMessage):
-        #je recois une trame, msg.adr est l'adresse du module qui m'envoie la trame
-        #msg.cmd1 et msg.cmd0 sont les 2 octet de commande envoyées par le module
-        #il faut etudier le protocole de communication des modules 8 voies pour savoir comment traiter les trames recues
-        
-        self.ui.textEdit.append(f"")#Fonction pour afficher la console du logiciel
-        self.ui.textEdit.append(f"-----------Trame recu : " + msg.toString())
-            
-        if(self.mode_de_fontionnement == "TEST"):
-            self.sendTrame(msg) #Si on est en mode test on renvoi l'ack
-            
-            if(msg.adr == self.adresse_module): #Si l'adresse du module est celle du banc de test, on traite la trame
-                #traitement de la trame
-                msg_en_retour = FreqMessage()
-                msg_en_retour.adr = self.adresse_module
-                msg_en_retour.cmd1 = 0x00
-                msg_en_retour.cmd0 = 0x00
-                msg_en_retour.build_trame()
+        if self.mode_de_fontionnement == "TEST":
+            # Envoi d’un ACK en mode TEST
+            self.sendTrame(msg)
+
+            # Vérifier si la trame est destinée à ce module
+            if msg.adr == self.adresse_module:
+                self.ui.textEdit.append("-----------Traitement de la trame pour ce module...")
                 
-                
-                self.ui.textEdit.append(f"-----------Traitement de la trame...")
-                self.ui.textEdit.append(f"-----------Envoi de la trame de retour...")
-                self.sendTrame(msg_en_retour)  
-                
-                #Pour faire une machine d'etat, tu peux utiliser "match ... case" pour traiter les trames reçues
-                #Tu dois aller chercher dans le pdf du protocole de communication des modules 8 voies pour savoir comment traiter les trames
-        
-        
+                # Vérifier le type de message reçu
+                match msg.trame[2]:
+                    case 0xA:  # Message d’alarme
+                        self.ui.textEdit.append("→ Message d’alarme détecté.")
+                        
+                        # Extraction des bits d’alarme
+                        v9 = (msg.trame[3] >> 2) & 0x01
+                        v8 = (msg.trame[3] >> 1) & 0x01
+                        v7 = (msg.trame[3] >> 0) & 0x01
+
+                        v6 = (msg.trame[4] >> 2) & 0x01
+                        v5 = (msg.trame[4] >> 1) & 0x01
+                        v4 = (msg.trame[4] >> 0) & 0x01
+
+                        v3 = (msg.trame[5] >> 2) & 0x01
+                        v2 = (msg.trame[5] >> 1) & 0x01
+                        v1 = (msg.trame[5] >> 0) & 0x01
+                        
+                        # Affichage des alarmes détectées
+                        self.ui.textEdit.append(
+                            f"Alarme reçue du module {msg.adr:02X} :\n"
+                            f"  - V9={v9}, V8={v8}, V7={v7}\n"
+                            f"  - V6={v6}, V5={v5}, V4={v4}\n"
+                            f"  - V3={v3}, V2={v2}, V1={v1}"
+                        )
+                    
+                    # case 0xD:  # Test du module #Cas qu'on ne devrait pas recevoir car c'est le banc de test qui envoie ce message
+                    #     self.ui.textEdit.append("→ Test du module détecté.")
+                        
+                    #     # Extraire le numéro du module testé
+                    #     module_tested = (msg.trame[0] << 4) | msg.trame[1]
+                        
+                    #     self.ui.textEdit.append(f"Test demandé pour le module {module_tested:02X}")
+                        
+                    #     # Réponse au test
+                    #     msg_en_retour.trame = [msg.trame[0], msg.trame[1], 0xD, 0x9, msg.trame[0], msg.trame[1]]
+                    
+                    case 0xB:  # Le module s'est réinitialisé
+                        self.ui.textEdit.append("→ Réinitialisation du module détectée.")
+
+                    
+                    case _:  # Cas inconnu
+                        self.ui.textEdit.append("Commande inconnue.")
+
+
 
 
 def main():
