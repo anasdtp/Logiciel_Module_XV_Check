@@ -21,6 +21,16 @@ class Application(MainWindow):
         #En mode TEST, le banc de test renvoi un acquittement à chaque trame reçu et si l'adresse du module correspond à celle du banc de test, 
         #on traite la trame et on renvoi une trame de retour par rapport au protocole de communication des modules 8 voies
     
+    def sendTestModule(self, adresse_module):
+        # Envoi d’un message de test du module
+        msg = FreqMessage(adresse_module, 0xD9, adresse_module)
+        msg.build_trame()
+        self.sendTrame(msg) 
+    
+    def sendReset(self, adresse_module):
+        # Envoi d’un message de réinitialisation du module
+        pass
+    
     def RxManage(self):
         # print("RxManage")
         self.FIFO_occupation = com.FIFO_Ecriture - self.FIFO_lecture
@@ -56,7 +66,7 @@ class Application(MainWindow):
                 msg.cmd0 = com.rxMsg[self.FIFO_lecture].data[2]
                 msg.build_trame()
                 
-                message = f"ID_RX_FRAME : trame reçu des modules : " + msg.toString() # A afficher dans un autre textEdit
+                message = f"ID_RX_FRAME : trame reçu des modules : " + str(msg) # A afficher dans un autre textEdit
                 self.ui.textEdit.append(f"")
                 self.ui.textEdit.append(message)
                 
@@ -68,7 +78,7 @@ class Application(MainWindow):
     
     def manageTrame(self, msg: FreqMessage):
         self.ui.textEdit.append("")
-        self.ui.textEdit.append(f"-----------Trame reçue : {msg.toString()}")
+        self.ui.textEdit.append(f"-----------Trame reçue : {str(msg)}")
 
         if self.mode_de_fontionnement == "TEST":
             # Envoi d’un ACK en mode TEST
