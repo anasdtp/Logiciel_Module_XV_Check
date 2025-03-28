@@ -31,6 +31,16 @@ class Application(MainWindow):
         # Envoi d’un message de réinitialisation du module
         pass
     
+    def sendInhibition(self, adresse_module, states_voies):
+        voies = ModuleVoies(states_voies)
+        msg = voies.toFreqMessage(adresse_module, 0x0)
+        self.sendTrame(msg)
+    
+    # def sendAlarmes(self, adresse_module, states_voies): #inutile car le banc de test ne doit pas envoyer de l'etat de ses voies, il en a pas
+    #     voies = ModuleVoies(states_voies)
+    #     msg = voies.toFreqMessage(adresse_module, 0xA)
+    #     self.sendTrame(msg)
+    
     def RxManage(self):
         # print("RxManage")
         self.FIFO_occupation = com.FIFO_Ecriture - self.FIFO_lecture
@@ -93,26 +103,12 @@ class Application(MainWindow):
                     case 0xA:  # Message d’alarme
                         self.ui.textEdit.append("→ Message d’alarme détecté.")
                         
-                        # Extraction des bits d’alarme
-                        v9 = (msg.trame[3] >> 2) & 0x01
-                        v8 = (msg.trame[3] >> 1) & 0x01
-                        v7 = (msg.trame[3] >> 0) & 0x01
-
-                        v6 = (msg.trame[4] >> 2) & 0x01
-                        v5 = (msg.trame[4] >> 1) & 0x01
-                        v4 = (msg.trame[4] >> 0) & 0x01
-
-                        v3 = (msg.trame[5] >> 2) & 0x01
-                        v2 = (msg.trame[5] >> 1) & 0x01
-                        v1 = (msg.trame[5] >> 0) & 0x01
+                        # Conversion du message en objet ModuleVoies
+                        voies = ModuleVoies()
+                        voies.fromFreqMessage(msg)
                         
                         # Affichage des alarmes détectées
-                        self.ui.textEdit.append(
-                            f"Alarme reçue du module {msg.adr:02X} :\n"
-                            f"  - V9={v9}, V8={v8}, V7={v7}\n"
-                            f"  - V6={v6}, V5={v5}, V4={v4}\n"
-                            f"  - V3={v3}, V2={v2}, V1={v1}"
-                        )
+                        self.ui.textEdit.append(str(voies))
                     
                     # case 0xD:  # Test du module #Cas qu'on ne devrait pas recevoir car c'est le banc de test qui envoie ce message
                     #     self.ui.textEdit.append("→ Test du module détecté.")
@@ -125,10 +121,19 @@ class Application(MainWindow):
                     #     # Réponse au test
                     #     msg_en_retour.trame = [msg.trame[0], msg.trame[1], 0xD, 0x9, msg.trame[0], msg.trame[1]]
                     
-                    case 0xB:  # Le module s'est réinitialisé
+                    case 0x8:  # Le module s'est réinitialisé
                         self.ui.textEdit.append("→ Réinitialisation du module détectée.")
 
-                    
+                    case 0xB: #Defaut 220V, message identique à un message d'alarme sauf le code B à la place de A
+                        self.ui.textEdit.append("→ Défaut 220V détecté.")
+                        
+                        # Conversion du message en objet ModuleVoies
+                        voies = ModuleVoies()
+                        voies.fromFreqMessage(msg)
+                        
+                        # Affichage des alarmes détectées
+                        self.ui.textEdit.append(str(voies))
+                        
                     case _:  # Cas inconnu
                         self.ui.textEdit.append("Commande inconnue.")
 

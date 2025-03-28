@@ -69,8 +69,9 @@ class FreqMessage():
     def __str__(self):
         return f"F{self.adr:02X}{self.cmd1:02X}{self.cmd0:02X}F"
     
-class ModuleVoies:
-    def __init__(self, states: list = None):
+class ModuleVoies(FreqMessage):
+    def __init__(self, states=None):
+        super().__init__()
         """
         states : liste de 9 booléens représentant l'état des voies V9 à V1. (V9 = defaut technique)
                  True = voie activée, False = voie désactivée.
@@ -82,8 +83,7 @@ class ModuleVoies:
                 raise ValueError("La liste 'states' doit contenir 9 éléments (V9 à V1)")
             self.states = states
 
-    @classmethod
-    def fromFreqMessage(cls, msg: FreqMessage):
+    def fromFreqMessage(self, msg : FreqMessage):
         """
         Convertit un FreqMessage en objet ModuleVoies.
         On suppose que msg.trame est une liste de 6 nibbles organisés ainsi :
@@ -94,20 +94,25 @@ class ModuleVoies:
           - msg.trame[4] : 0 V6 V5 V4
           - msg.trame[5] : 0 V3 V2 V1
         """
+        self.adr = msg.adr
+        self.cmd1 = msg.cmd1
+        self.cmd0 = msg.cmd0
+        self.trame = msg.trame
+        
         # Extraction des états en partant de V9 (MSB) jusqu'à V1 (LSB)
-        states = []
         # Pour msg.trame[3] : extraire V9, V8, V7
+        self.states = []
         for shift in (2, 1, 0):
-            states.append(bool((msg.trame[3] >> shift) & 0x01))
+            self.states.append(bool((self.trame[3] >> shift) & 0x01))
         # Pour msg.trame[4] : extraire V6, V5, V4
         for shift in (2, 1, 0):
-            states.append(bool((msg.trame[4] >> shift) & 0x01))
+            self.states.append(bool((self.trame[4] >> shift) & 0x01))
         # Pour msg.trame[5] : extraire V3, V2, V1
         for shift in (2, 1, 0):
-            states.append(bool((msg.trame[5] >> shift) & 0x01))
-        return cls(states)
+            self.states.append(bool((self.trame[5] >> shift) & 0x01))
+        return self.states
 
-    def toFreqMessage(self, module_address: int, message_type: int) -> FreqMessage:
+    def toFreqMessage(self, module_address: int, message_type: int, states=None)-> FreqMessage:
         """
         Convertit l'état des voies (self.states) en un FreqMessage.
         module_address : adresse du module (octet) à placer dans les 2 premiers nibbles.
@@ -120,27 +125,34 @@ class ModuleVoies:
           - trame[3] : 0 V9 V8 V7\n          - trame[4] : 0 V6 V5 V4\n          - trame[5] : 0 V3 V2 V1
         """
         # Création du FreqMessage avec les valeurs par défaut
-        msg = FreqMessage(adr=module_address)
-        msg.build_trame()
-        msg.trame[2] = message_type
+        self.adr = module_address
+        self.build_trame()
+        self.trame[2] = message_type
+        
+        if states is not None:
+            if len(states) != 9:
+                raise ValueError("La liste 'states' doit contenir 9 éléments (V9 à V1)")
+            self.states = states
         
         # Packager les états par groupe de 3 bits
         # Les 3 premiers éléments de self.states correspondent à V9, V8, V7
-        msg.trame[3] = ((1 if self.states[0] else 0) << 2) | ((1 if self.states[1] else 0) << 1) | (1 if self.states[2] else 0)
+        self.trame[3] = ((1 if self.states[0] else 0) << 2) | ((1 if self.states[1] else 0) << 1) | (1 if self.states[2] else 0)
         # Les 3 suivants correspondent à V6, V5, V4
-        msg.trame[4] = ((1 if self.states[3] else 0) << 2) | ((1 if self.states[4] else 0) << 1) | (1 if self.states[5] else 0)
+        self.trame[4] = ((1 if self.states[3] else 0) << 2) | ((1 if self.states[4] else 0) << 1) | (1 if self.states[5] else 0)
         # Les 3 derniers correspondent à V3, V2, V1
-        msg.trame[5] = ((1 if self.states[6] else 0) << 2) | ((1 if self.states[7] else 0) << 1) | (1 if self.states[8] else 0)
+        self.trame[5] = ((1 if self.states[6] else 0) << 2) | ((1 if self.states[7] else 0) << 1) | (1 if self.states[8] else 0)
         
-        msg.parse_trame()
+        self.parse_trame()
         
+        msg = FreqMessage(self.adr, self.cmd1, self.cmd0)
+        msg.trame = self.trame
         return msg
 
     def __str__(self):
         """
-        Affichage de l'état des voies de V9 à V1.
+        Affichage de l'état des voies de V9 à V1 ainsi que l'adresse du module.
         """
-        s = "Voies : "
+        s = f"Voies pour {self.adr:02X}: "
         for i, etat in enumerate(self.states):
             voie = 9 - i
             s += f"V{voie}={'ON' if etat else 'OFF'}  "
@@ -174,21 +186,21 @@ def testModuleVoies():
     print(msg)
     
     print("----------Conversion de la trame en objet ModuleVoies")
-    voies = ModuleVoies.fromFreqMessage(msg)
+    voies = ModuleVoies()
+    voies.fromFreqMessage(msg)
     print(voies)  # Affiche l'état des voies
-
+    
     print("----------Création d'une trame de message à partir des voies")
     # Ici, on souhaite envoyer un message de type alarme (0xA) pour le module 0x21
     msg2 = voies.toFreqMessage(module_address=0x21, message_type=0xA)
     print(msg2)
-    
     
     print("----------Création d'un objet ModuleVoies à partir d'une liste d'états")
     # Création d'un objet ModuleVoies avec quelques voies activées
     voies2 = ModuleVoies([True, False, False, False, False, True, True, False, False])
     print(voies2)
     print("----------Création d'une trame de message à partir des voies")
-    msg3 = voies2.toFreqMessage(module_address=0x21, message_type=0xA)
+    msg3 = voies2.toFreqMessage(module_address=0x21, message_type=0x0)
     print(msg3)
 
 if __name__ == '__main__':
